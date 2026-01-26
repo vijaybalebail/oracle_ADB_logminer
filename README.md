@@ -1,6 +1,6 @@
 # oracle_ADB_logminer
  native LogMiner-based CDC in ADB Serverless,  
-''''
+```
  Set the password of Admin and ggadmin in the script.  Since you need to run Logminor only in GGADMIN user,  the test case easier to run from sqlplus as it involves swithing between 2 users.
 
  ============================================================================
@@ -14,4 +14,4 @@
    GGADMIN: ggadmin/Your_password@vbjson_low
 
  Usage: sqlplus /nolog @logminer_working_demo.sql
-'''
+```
