@@ -1,0 +1,368 @@
+Connected.
+
+============================================================================
+PART 1: Initial Setup (Connected as ADMIN)
+============================================================================
+USER is "ADMIN"
+
+Step 1.1: Unlocking GGADMIN account...
+
+User altered.
+
+
+PL/SQL procedure successfully completed.
+
+
+Step 1.2: Granting LOGMINING privilege to GGADMIN...
+
+Grant succeeded.
+
+
+Step 1.3: Creating test table...
+
+PL/SQL procedure successfully completed.
+
+
+Table created.
+
+
+Enabling supplemental logging on the table (REQUIRED for LogMiner)...
+
+Table altered.
+
+Supplemental logging enabled.
+
+Initial data (BEFORE LogMiner):
+
+1 row created.
+
+
+1 row created.
+
+
+1 row created.
+
+
+Commit complete.
+
+
+  ID TEST_NAME                           TEST_VALUE TEST_TIMESTAMP                                                              TEST_ACTION
+---- ----------------------------------- ---------- --------------------------------------------------------------------------- ------------------------------
+   1 Record Before LogMiner                     100 26-JAN-26 01.00.20.295299 AM                                                BEFORE_LOGMINER
+   2 Another Pre-LogMiner Record                200 26-JAN-26 01.00.20.299999 AM                                                BEFORE_LOGMINER
+   3 Third Pre-LogMiner Record                  300 26-JAN-26 01.00.20.302943 AM                                                BEFORE_LOGMINER
+
+3 rows selected.
+
+
+============================================================================
+PART 1 COMPLETE
+============================================================================
+Press ENTER to connect as GGADMIN and start LogMiner...
+
+Connected.
+
+============================================================================
+PART 2: Starting LogMiner Session (Connected as GGADMIN)
+============================================================================
+USER is "GGADMIN"
+
+Starting LogMiner with TIME range (last 1 hour) and DICT_FROM_ONLINE_CATALOG...
+This option is CRITICAL for ADB Serverless to decode table names!
+
+PL/SQL procedure successfully completed.
+
+
+Verifying LogMiner session is active...
+
+SESSION_NAME                        DB_ID  START_SCN    END_SCN
+------------------------------ ---------- ---------- ----------
+Ad-hoc SGA footprint                    0          0          0
+
+1 row selected.
+
+
+============================================================================
+PART 2 COMPLETE - LogMiner is ACTIVE
+============================================================================
+Press ENTER to connect as ADMIN and perform DML operations...
+
+Connected.
+
+============================================================================
+PART 3: Performing DML Operations (Connected as ADMIN)
+============================================================================
+USER is "ADMIN"
+
+Performing DML operations...
+
+1 row created.
+
+
+1 row created.
+
+
+Commit complete.
+
+
+2 rows updated.
+
+
+Commit complete.
+
+
+1 row deleted.
+
+
+Commit complete.
+
+
+Current state of table (AFTER all operations):
+
+  ID TEST_NAME                           TEST_VALUE TEST_TIMESTAMP                                                              TEST_ACTION
+---- ----------------------------------- ---------- --------------------------------------------------------------------------- ------------------------------
+   1 Record Before LogMiner                     110 26-JAN-26 01.00.20.295299 AM                                                UPDATED_DURING_LOGMINER
+   2 Another Pre-LogMiner Record                210 26-JAN-26 01.00.20.299999 AM                                                UPDATED_DURING_LOGMINER
+   4 Record During LogMiner                     400 26-JAN-26 01.00.33.022665 AM                                                DURING_LOGMINER
+   5 Another During-LogMiner Record             500 26-JAN-26 01.00.33.026036 AM                                                DURING_LOGMINER
+
+4 rows selected.
+
+
+Summary: 2 INSERTs, 2 UPDATEs, 1 DELETE completed
+
+============================================================================
+PART 3 COMPLETE
+============================================================================
+Press ENTER to connect as GGADMIN and query LogMiner contents...
+
+Connected.
+
+============================================================================
+PART 4: Querying LogMiner Contents (Connected as GGADMIN)
+============================================================================
+USER is "GGADMIN"
+
+Restarting LogMiner with DICT_FROM_ONLINE_CATALOG...
+
+PL/SQL procedure successfully completed.
+
+
+Step 4.1: Total changes in LogMiner...
+
+TOTAL_CHANGES
+-------------
+        57779
+
+1 row selected.
+
+
+Step 4.2: Schemas with activity...
+
+SEG_OWNER
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ ROW_COUNT
+----------
+SYS
+     40444
+
+ADMIN
+        90
+
+UNKNOWN
+        35
+
+AUDSYS
+        13
+
+GGADMIN
+         3
+
+
+5 rows selected.
+
+
+Step 4.3: Summary of changes for TEST_LOGMINER_DEMO...
+
+OPERATION       OPERATION_COUNT
+--------------- ---------------
+DDL                           7
+DELETE                        1
+INSERT                        5
+UPDATE                        2
+
+4 rows selected.
+
+
+============================================================================
+Step 4.4: ALL captured changes for TEST_LOGMINER_DEMO
+============================================================================
+
+             SCN TIMESTAMP            USERNAME   SEG_OWNER  TABLE_NAME                OPERATION  SQL_REDO
+---------------- -------------------- ---------- ---------- ------------------------- ---------- ----------------------------------------------------------------------------------------------------
+SQL_UNDO
+----------------------------------------------------------------------------------------------------
+  46165808901118 2026-01-26 00:24:45  ADMIN      ADMIN      TEST_LOGMINER_DEMO        DDL        DROP TABLE test_logminer_demo PURGE;
+
+
+  46165808901714 2026-01-26 00:24:45  ADMIN      ADMIN      TEST_LOGMINER_DEMO        DDL        CREATE TABLE test_logminer_demo (
+                                                                                                 id NUMBER PRIMARY KEY,
+                                                                                                 test_name VARCHAR2(100),
+                                                                                                 test_value NUMBER,
+                                                                                                 test_timestamp TIMESTAMP DEFAULT SYSTIMESTAMP,
+                                                                                                 test_action VARCHAR2(50)
+                                                                                                 );
+
+
+  46165834298837 2026-01-26 00:31:02  ADMIN      ADMIN      TEST_LOGMINER_DEMO        DDL        DROP TABLE test_logminer_demo PURGE;
+
+
+  46165834301732 2026-01-26 00:31:02  ADMIN      ADMIN      TEST_LOGMINER_DEMO        DDL        CREATE TABLE test_logminer_demo (
+                                                                                                 id NUMBER PRIMARY KEY,
+                                                                                                 test_name VARCHAR2(100),
+                                                                                                 test_value NUMBER,
+                                                                                                 test_timestamp TIMESTAMP DEFAULT SYSTIMESTAMP,
+                                                                                                 test_action VARCHAR2(50)
+                                                                                                 );
+
+
+  46165976901829 2026-01-26 01:00:20  ADMIN      ADMIN      TEST_LOGMINER_DEMO        DDL        DROP TABLE test_logminer_demo PURGE;
+
+
+  46165976903834 2026-01-26 01:00:20  ADMIN      ADMIN      TEST_LOGMINER_DEMO        DDL        CREATE TABLE test_logminer_demo (
+                                                                                                 id NUMBER PRIMARY KEY,
+                                                                                                 test_name VARCHAR2(100),
+                                                                                                 test_value NUMBER,
+                                                                                                 test_timestamp TIMESTAMP DEFAULT SYSTIMESTAMP,
+                                                                                                 test_action VARCHAR2(50)
+                                                                                                 );
+
+
+  46165976904173 2026-01-26 01:00:20  ADMIN      ADMIN      TEST_LOGMINER_DEMO        DDL        ALTER TABLE test_logminer_demo ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS;
+
+
+  46165976904503 2026-01-26 01:00:20  ADMIN      ADMIN      TEST_LOGMINER_DEMO        INSERT     insert into
+                                                                                                 "ADMIN"."TEST_LOGMINER_DEMO"("ID","TEST_NAME","TEST_VALUE","TEST_TIMESTAMP","TEST_ACTION") values
+                                                                                                 ('1','Record Before LogMiner','100',TO_TIMESTAMP('26-JAN-26 01.00.20.295299 AM'),'BEFORE_LOGMINER');
+delete from "ADMIN"."TEST_LOGMINER_DEMO" where "ID" = '1' and "TEST_NAME" = 'Record Before LogMiner'
+and "TEST_VALUE" = '100' and "TEST_TIMESTAMP" = TO_TIMESTAMP('26-JAN-26 01.00.20.295299 AM') and
+"TEST_ACTION" = 'BEFORE_LOGMINER' and ROWID = 'AAAt0tAAAAAAInfAAA';
+
+  46165976904530 2026-01-26 01:00:20  ADMIN      ADMIN      TEST_LOGMINER_DEMO        INSERT     insert into
+                                                                                                 "ADMIN"."TEST_LOGMINER_DEMO"("ID","TEST_NAME","TEST_VALUE","TEST_TIMESTAMP","TEST_ACTION") values
+                                                                                                 ('2','Another Pre-LogMiner Record','200',TO_TIMESTAMP('26-JAN-26 01.00.20.299999
+                                                                                                 AM'),'BEFORE_LOGMINER');
+delete from "ADMIN"."TEST_LOGMINER_DEMO" where "ID" = '2' and "TEST_NAME" = 'Another Pre-LogMiner
+Record' and "TEST_VALUE" = '200' and "TEST_TIMESTAMP" = TO_TIMESTAMP('26-JAN-26 01.00.20.299999 AM')
+and "TEST_ACTION" = 'BEFORE_LOGMINER' and ROWID = 'AAAt0tAAAAAAInfAAB';
+
+  46165976904563 2026-01-26 01:00:20  ADMIN      ADMIN      TEST_LOGMINER_DEMO        INSERT     insert into
+                                                                                                 "ADMIN"."TEST_LOGMINER_DEMO"("ID","TEST_NAME","TEST_VALUE","TEST_TIMESTAMP","TEST_ACTION") values
+                                                                                                 ('3','Third Pre-LogMiner Record','300',TO_TIMESTAMP('26-JAN-26 01.00.20.302943
+                                                                                                 AM'),'BEFORE_LOGMINER');
+delete from "ADMIN"."TEST_LOGMINER_DEMO" where "ID" = '3' and "TEST_NAME" = 'Third Pre-LogMiner
+Record' and "TEST_VALUE" = '300' and "TEST_TIMESTAMP" = TO_TIMESTAMP('26-JAN-26 01.00.20.302943 AM')
+and "TEST_ACTION" = 'BEFORE_LOGMINER' and ROWID = 'AAAt0tAAAAAAInfAAC';
+
+  46165977034146 2026-01-26 01:00:33  ADMIN      ADMIN      TEST_LOGMINER_DEMO        INSERT     insert into
+                                                                                                 "ADMIN"."TEST_LOGMINER_DEMO"("ID","TEST_NAME","TEST_VALUE","TEST_TIMESTAMP","TEST_ACTION") values
+                                                                                                 ('4','Record During LogMiner','400',TO_TIMESTAMP('26-JAN-26 01.00.33.022665 AM'),'DURING_LOGMINER');
+delete from "ADMIN"."TEST_LOGMINER_DEMO" where "ID" = '4' and "TEST_NAME" = 'Record During LogMiner'
+and "TEST_VALUE" = '400' and "TEST_TIMESTAMP" = TO_TIMESTAMP('26-JAN-26 01.00.33.022665 AM') and
+"TEST_ACTION" = 'DURING_LOGMINER' and ROWID = 'AAAt0tAAAAAAInfAAD';
+
+  46165977034173 2026-01-26 01:00:33  ADMIN      ADMIN      TEST_LOGMINER_DEMO        INSERT     insert into
+                                                                                                 "ADMIN"."TEST_LOGMINER_DEMO"("ID","TEST_NAME","TEST_VALUE","TEST_TIMESTAMP","TEST_ACTION") values
+                                                                                                 ('5','Another During-LogMiner Record','500',TO_TIMESTAMP('26-JAN-26 01.00.33.026036
+                                                                                                 AM'),'DURING_LOGMINER');
+delete from "ADMIN"."TEST_LOGMINER_DEMO" where "ID" = '5' and "TEST_NAME" = 'Another During-LogMiner
+Record' and "TEST_VALUE" = '500' and "TEST_TIMESTAMP" = TO_TIMESTAMP('26-JAN-26 01.00.33.026036 AM')
+and "TEST_ACTION" = 'DURING_LOGMINER' and ROWID = 'AAAt0tAAAAAAInfAAE';
+
+  46165977034692 2026-01-26 01:00:33  ADMIN      ADMIN      TEST_LOGMINER_DEMO        UPDATE     update "ADMIN"."TEST_LOGMINER_DEMO" set "TEST_VALUE" = '110', "TEST_ACTION" =
+                                                                                                 'UPDATED_DURING_LOGMINER' where "ID" = '1' and "TEST_NAME" = 'Record Before LogMiner' and
+                                                                                                 "TEST_VALUE" = '100' and "TEST_TIMESTAMP" = TO_TIMESTAMP('26-JAN-26 01.00.20.295299 AM') and
+                                                                                                 "TEST_ACTION" = 'BEFORE_LOGMINER' and ROWID = 'AAAt0tAAAAAAInfAAA';
+update "ADMIN"."TEST_LOGMINER_DEMO" set "TEST_VALUE" = '100', "TEST_ACTION" = 'BEFORE_LOGMINER'
+where "ID" = '1' and "TEST_NAME" = 'Record Before LogMiner' and "TEST_VALUE" = '110' and
+"TEST_TIMESTAMP" = TO_TIMESTAMP('26-JAN-26 01.00.20.295299 AM') and "TEST_ACTION" =
+'UPDATED_DURING_LOGMINER' and ROWID = 'AAAt0tAAAAAAInfAAA';
+
+  46165977034693 2026-01-26 01:00:33  ADMIN      ADMIN      TEST_LOGMINER_DEMO        UPDATE     update "ADMIN"."TEST_LOGMINER_DEMO" set "TEST_VALUE" = '210', "TEST_ACTION" =
+                                                                                                 'UPDATED_DURING_LOGMINER' where "ID" = '2' and "TEST_NAME" = 'Another Pre-LogMiner Record' and
+                                                                                                 "TEST_VALUE" = '200' and "TEST_TIMESTAMP" = TO_TIMESTAMP('26-JAN-26 01.00.20.299999 AM') and
+                                                                                                 "TEST_ACTION" = 'BEFORE_LOGMINER' and ROWID = 'AAAt0tAAAAAAInfAAB';
+update "ADMIN"."TEST_LOGMINER_DEMO" set "TEST_VALUE" = '200', "TEST_ACTION" = 'BEFORE_LOGMINER'
+where "ID" = '2' and "TEST_NAME" = 'Another Pre-LogMiner Record' and "TEST_VALUE" = '210' and
+"TEST_TIMESTAMP" = TO_TIMESTAMP('26-JAN-26 01.00.20.299999 AM') and "TEST_ACTION" =
+'UPDATED_DURING_LOGMINER' and ROWID = 'AAAt0tAAAAAAInfAAB';
+
+
+             SCN TIMESTAMP            USERNAME   SEG_OWNER  TABLE_NAME                OPERATION  SQL_REDO
+---------------- -------------------- ---------- ---------- ------------------------- ---------- ----------------------------------------------------------------------------------------------------
+SQL_UNDO
+----------------------------------------------------------------------------------------------------
+  46165977034864 2026-01-26 01:00:33  ADMIN      ADMIN      TEST_LOGMINER_DEMO        DELETE     delete from "ADMIN"."TEST_LOGMINER_DEMO" where "ID" = '3' and "TEST_NAME" = 'Third Pre-LogMiner
+                                                                                                 Record' and "TEST_VALUE" = '300' and "TEST_TIMESTAMP" = TO_TIMESTAMP('26-JAN-26 01.00.20.302943 AM')
+                                                                                                 and "TEST_ACTION" = 'BEFORE_LOGMINER' and ROWID = 'AAAt0tAAAAAAInfAAC';
+insert into
+"ADMIN"."TEST_LOGMINER_DEMO"("ID","TEST_NAME","TEST_VALUE","TEST_TIMESTAMP","TEST_ACTION") values
+('3','Third Pre-LogMiner Record','300',TO_TIMESTAMP('26-JAN-26 01.00.20.302943
+AM'),'BEFORE_LOGMINER');
+
+
+15 rows selected.
+
+
+============================================================================
+Step 4.5: Ending LogMiner session...
+============================================================================
+
+PL/SQL procedure successfully completed.
+
+
+ACTIVE_SESSIONS
+---------------
+              0
+
+1 row selected.
+
+
+============================================================================
+PART 5: Cleanup
+============================================================================
+Press ENTER to connect as ADMIN for cleanup...
+
+Connected.
+USER is "ADMIN"
+
+To cleanup, run:
+DROP TABLE test_logminer_demo PURGE
+
+============================================================================
+DEMONSTRATION COMPLETE!
+============================================================================
+
+What we demonstrated:
+1. Unlocked and configured GGADMIN account
+2. Granted LOGMINING privilege to GGADMIN
+3. Created test table with SUPPLEMENTAL LOGGING enabled (REQUIRED!)
+4. Inserted baseline data as ADMIN
+5. Started LogMiner with DICT_FROM_ONLINE_CATALOG option (CRITICAL!)
+6. Performed INSERT, UPDATE, DELETE operations as ADMIN
+7. Queried V$LOGMNR_CONTENTS to see all captured changes
+8. Ended LogMiner session
+
+Key Findings:
+- Must use GGADMIN user for LogMiner in ADB Serverless (undocumented)
+- SUPPLEMENTAL LOGGING must be enabled on tables (ALL COLUMNS recommended)
+- DICT_FROM_ONLINE_CATALOG option is REQUIRED for table name decoding
+- Time-based ranges (STARTTIME/ENDTIME) work better than SCN ranges
+- LogMiner captures all DML with complete SQL_REDO and SQL_UNDO
+- LogMiner session terminates on CONNECT - must restart to query
+- Only ONE LogMiner session allowed per ADB instance
+- Archived logs retained for 7 days in ADB Serverless
+- V$LOGMNR_CONTENTS queries can be slow - query once and filter results
+
+Output saved to: logminer_demo_output.txt
+============================================================================
