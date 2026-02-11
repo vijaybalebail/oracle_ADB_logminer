@@ -1,0 +1,286 @@
+-- ============================================================================
+-- Self-Healing CDC Capture Procedure - Production Version
+-- ============================================================================
+-- Features:
+--   - Automatic ORA-01291 recovery (finds oldest available SCN)
+--   - Comprehensive system schema/table filtering
+--   - Captures all user schema changes
+--   - Logs recovery actions for audit
+--   - No manual intervention needed after DB restarts
+--
+-- Run as: sqlplus admin/password@connection @production_self_healing_procedure.sql
+-- ============================================================================
+
+SET ECHO ON
+SET SERVEROUTPUT ON SIZE 1000000
+
+-- Creating Production Self-Healing CDC Capture Procedure
+
+CREATE OR REPLACE PROCEDURE ggadmin.capture_cdc_changes AS
+    v_last_captured_scn NUMBER;
+    v_current_scn NUMBER;
+    v_count NUMBER := 0;
+    v_oldest_available_scn NUMBER;
+BEGIN
+    -- ═══════════════════════════════════════════════════════════════
+    -- STEP 1: Determine SCN range to process
+    -- ═══════════════════════════════════════════════════════════════
+    
+    -- Get the last processed SCN
+    SELECT NVL(MAX(scn), 0) INTO v_last_captured_scn 
+    FROM cdc_changes_history;
+    
+    -- Get current database SCN
+    SELECT current_scn INTO v_current_scn 
+    FROM v$database;
+    
+    -- Only process if there are new changes
+    IF v_current_scn > v_last_captured_scn THEN
+        
+        -- ═══════════════════════════════════════════════════════════════
+        -- STEP 2: Start LogMiner (with auto-recovery on ORA-01291)
+        -- ═══════════════════════════════════════════════════════════════
+        
+        BEGIN
+            -- Try standard SCN-based LogMiner
+            dbms_logmnr.start_logmnr(
+                STARTSCN => v_last_captured_scn,
+                ENDSCN => v_current_scn,
+                OPTIONS => DBMS_LOGMNR.DICT_FROM_ONLINE_CATALOG
+            );
+            
+        EXCEPTION
+            WHEN OTHERS THEN
+                -- ═══════════════════════════════════════════════════════════
+                -- AUTO-RECOVERY: Handle ORA-01291 (missing log file)
+                -- ═══════════════════════════════════════════════════════════
+                IF SQLCODE = -1291 THEN
+                    
+                    -- AUTO-RECOVERY MODE: ORA-01291 detected
+                    -- Clean up any existing LogMiner session
+                    BEGIN
+                        dbms_logmnr.end_logmnr;
+                    EXCEPTION
+                        WHEN OTHERS THEN NULL;
+                    END;
+                    
+                    -- Start LogMiner from 6 days ago to find available logs
+                    BEGIN
+                        dbms_logmnr.start_logmnr(
+                            STARTTIME => SYSDATE - 6,
+                            ENDTIME => SYSDATE,
+                            OPTIONS => DBMS_LOGMNR.DICT_FROM_ONLINE_CATALOG
+                        );
+                        
+                        -- Find MINIMUM SCN that's GREATER than what we captured
+                        SELECT scn INTO v_oldest_available_scn
+                        FROM v$logmnr_contents
+                        WHERE scn > v_last_captured_scn
+                        ORDER BY scn ASC
+                        FETCH FIRST 1 ROWS ONLY;
+                        
+                        dbms_logmnr.end_logmnr;
+                        
+                    EXCEPTION
+                        WHEN OTHERS THEN
+                            BEGIN
+                                dbms_logmnr.end_logmnr;
+                            EXCEPTION
+                                WHEN OTHERS THEN NULL;
+                            END;
+                            v_oldest_available_scn := NULL;
+                    END;
+                    
+                    IF v_oldest_available_scn IS NOT NULL THEN
+                        -- Found available logs - bridge the gap
+                        
+                        -- Insert checkpoint record
+                        INSERT INTO cdc_changes_history (
+                            capture_id,
+                            scn,
+                            timestamp,
+                            username,
+                            seg_owner,
+                            table_name,
+                            operation,
+                            sql_redo,
+                            sql_undo,
+                            changed_at
+                        ) VALUES (
+                            cdc_changes_seq.NEXTVAL,
+                            v_oldest_available_scn - 1,
+                            SYSTIMESTAMP,
+                            'SYSTEM',
+                            'SYSTEM',
+                            'CHECKPOINT',
+                            'AUTO_RECOVERY',
+                            '-- Auto-recovery from ORA-01291. Gap: SCN ' || v_last_captured_scn || 
+                            ' to ' || v_oldest_available_scn || '. Lost ' || 
+                            (v_oldest_available_scn - v_last_captured_scn - 1) || ' SCNs',
+                            '-- Recovery timestamp: ' || TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD HH24:MI:SS'),
+                            SYSTIMESTAMP
+                        );
+                        COMMIT;
+                        
+                        -- Update starting SCN for this run
+                        v_last_captured_scn := v_oldest_available_scn - 1;
+                        
+                        -- Restart LogMiner from the new checkpoint
+                        dbms_logmnr.start_logmnr(
+                            STARTSCN => v_last_captured_scn,
+                            ENDSCN => v_current_scn,
+                            OPTIONS => DBMS_LOGMNR.DICT_FROM_ONLINE_CATALOG
+                        );
+                        
+                    ELSE
+                        -- No available logs found - reset to current
+                        
+                        -- Insert checkpoint at current SCN
+                        INSERT INTO cdc_changes_history (
+                            capture_id,
+                            scn,
+                            timestamp,
+                            username,
+                            seg_owner,
+                            table_name,
+                            operation,
+                            sql_redo,
+                            sql_undo,
+                            changed_at
+                        ) VALUES (
+                            cdc_changes_seq.NEXTVAL,
+                            v_current_scn,
+                            SYSTIMESTAMP,
+                            'SYSTEM',
+                            'SYSTEM',
+                            'CHECKPOINT',
+                            'FULL_RESET',
+                            '-- All logs purged. Reset to current SCN. Lost SCNs: ' || 
+                            v_last_captured_scn || ' to ' || v_current_scn,
+                            '-- Recovery timestamp: ' || TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD HH24:MI:SS'),
+                            SYSTIMESTAMP
+                        );
+                        COMMIT;
+                        
+                        RETURN;  -- Exit this run
+                    END IF;
+                    
+                ELSE
+                    -- Some other error - re-raise it
+                    RAISE;
+                END IF;
+        END;
+        
+        -- ═══════════════════════════════════════════════════════════════
+        -- STEP 3: Capture changes with comprehensive filtering
+        -- ═══════════════════════════════════════════════════════════════
+        
+        INSERT INTO cdc_changes_history (
+            scn,
+            timestamp,
+            username,
+            seg_owner,
+            table_name,
+            operation,
+            sql_redo,
+            sql_undo
+        )
+        SELECT 
+            scn,
+            timestamp,
+            username,
+            seg_owner,
+            table_name,
+            operation,
+            sql_redo,
+            sql_undo
+        FROM v$logmnr_contents
+        WHERE seg_owner IS NOT NULL
+        AND seg_owner NOT IN ('SYS', 'SYSTEM', 'GGADMIN', 'AUDSYS', 'APPQOSSYS', 'UNKNOWN')
+        AND seg_owner NOT LIKE 'APEX%'
+        AND seg_owner NOT LIKE 'FLOWS%'
+        AND table_name IS NOT NULL
+        AND table_name NOT LIKE 'DBTOOLS$%'
+        AND table_name NOT LIKE 'OBJ#%'
+        AND table_name NOT LIKE 'REDO$%'
+        AND table_name NOT LIKE 'SMON$%'
+        AND operation IN ('INSERT', 'UPDATE', 'DELETE')
+        AND scn > v_last_captured_scn
+        AND ROWNUM <= 10000;  -- Safety limit
+        
+        v_count := SQL%ROWCOUNT;
+        COMMIT;
+        
+        -- End LogMiner session
+        dbms_logmnr.end_logmnr;
+        
+    ELSE
+        -- No new changes
+        NULL;
+    END IF;
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        -- Always try to clean up LogMiner session
+        BEGIN
+            dbms_logmnr.end_logmnr;
+        EXCEPTION
+            WHEN OTHERS THEN NULL;
+        END;
+        
+        -- Re-raise so scheduler marks job as failed
+        RAISE;
+END capture_cdc_changes;
+/
+
+SHOW ERRORS
+
+-- Grant execute permission
+GRANT EXECUTE ON ggadmin.capture_cdc_changes TO PUBLIC;
+
+-- ============================================================================
+-- Production Self-Healing CDC Procedure Created Successfully!
+-- ============================================================================
+--
+-- Key Features:
+--   - Automatic ORA-01291 recovery
+--   - Comprehensive system schema filtering
+--   - Excludes: SYS, SYSTEM, GGADMIN, AUDSYS, APPQOSSYS, APEX%, FLOWS%
+--   - Excludes system tables: DBTOOLS$%, OBJ#%, REDO$%, SMON$%
+--   - Captures all user schema DML operations
+--   - 10K row safety limit per run
+--   - Logs all recovery actions
+--
+-- Filtered Schemas (EXCLUDED):
+--   - Oracle system schemas: SYS, SYSTEM, AUDSYS, APPQOSSYS
+--   - LogMiner CDC schema: GGADMIN
+--   - Oracle APEX: APEX%, FLOWS%
+--   - Unknown/invalid schemas: UNKNOWN
+--
+-- Filtered Tables (EXCLUDED):
+--   - Database tools: DBTOOLS$%
+--   - Oracle internal: OBJ#%, REDO$%, SMON$%
+--
+-- What Gets Captured:
+--   - All user schemas (ADMIN, SCOTT, HR, etc.)
+--   - INSERT, UPDATE, DELETE operations only
+--   - Full SQL redo and undo statements
+--   - Complete transaction context
+--
+-- To test:
+--   SET SERVEROUTPUT ON
+--   EXEC ggadmin.capture_cdc_changes;
+--
+-- To view what's being captured:
+--   SELECT seg_owner, table_name, operation, COUNT(*)
+--   FROM ggadmin.cdc_changes_history
+--   WHERE seg_owner != 'SYSTEM'
+--   GROUP BY seg_owner, table_name, operation
+--   ORDER BY seg_owner, table_name;
+--
+-- To view recovery checkpoints:
+--   SELECT * FROM ggadmin.cdc_changes_history
+--   WHERE table_name = 'CHECKPOINT'
+--   ORDER BY capture_id DESC;
+--
+-- ============================================================================
