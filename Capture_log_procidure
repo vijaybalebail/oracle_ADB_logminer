@@ -1,3 +1,23 @@
+-- As GGADMIN, create a permanent CDC table
+CREATE TABLE logminer_cdc_history (
+    capture_time    TIMESTAMP DEFAULT SYSTIMESTAMP,
+    scn             NUMBER,
+    commit_scn      NUMBER,
+    timestamp       DATE,
+    operation       VARCHAR2(32),
+    username        VARCHAR2(128),
+    seg_owner       VARCHAR2(128),
+    table_name      VARCHAR2(128),
+    sql_redo        CLOB,
+    sql_undo        CLOB,
+    xid             RAW(8),
+    row_id          VARCHAR2(20)
+);
+
+-- Create index for performance
+CREATE INDEX idx_logminer_cdc_time ON logminer_cdc_history(capture_time);
+CREATE INDEX idx_logminer_cdc_table ON logminer_cdc_history(seg_owner, table_name);
+
 -- ============================================================================
 -- Self-Healing CDC Capture Procedure - Production Version
 -- ============================================================================
