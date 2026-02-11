@@ -1,41 +1,209 @@
 -- As GGADMIN, create a permanent CDC table
-CREATE TABLE logminer_cdc_history (
-    capture_time    TIMESTAMP DEFAULT SYSTIMESTAMP,
-    scn             NUMBER,
-    commit_scn      NUMBER,
-    timestamp       DATE,
-    operation       VARCHAR2(32),
-    username        VARCHAR2(128),
-    seg_owner       VARCHAR2(128),
-    table_name      VARCHAR2(128),
-    sql_redo        CLOB,
-    sql_undo        CLOB,
-    xid             RAW(8),
-    row_id          VARCHAR2(20)
-);
-
--- Create index for performance
-CREATE INDEX idx_logminer_cdc_time ON logminer_cdc_history(capture_time);
-CREATE INDEX idx_logminer_cdc_table ON logminer_cdc_history(seg_owner, table_name);
-
--- ============================================================================
--- Self-Healing CDC Capture Procedure - Production Version
--- ============================================================================
--- Features:
---   - Automatic ORA-01291 recovery (finds oldest available SCN)
---   - Comprehensive system schema/table filtering
---   - Captures all user schema changes
---   - Logs recovery actions for audit
---   - No manual intervention needed after DB restarts
+-- =============================================================================
+-- Oracle LogMiner CDC Solution for Autonomous Database Serverless (ADB-S)
+-- =============================================================================
 --
--- Run as: sqlplus admin/password@connection @production_self_healing_procedure.sql
--- ============================================================================
+-- Description: Complete Change Data Capture (CDC) solution using Oracle 
+--              LogMiner on Autonomous Database Serverless 23ai
+--
+-- Features:
+--   - Automatic change capture via scheduled jobs (every 5 minutes)
+--   - Permanent storage of all DML operations (INSERT/UPDATE/DELETE)
+--   - REST API access via ORDS
+--   - Complete audit trail with SQL_REDO and SQL_UNDO
+--
+-- Author: Oracle Database MCP Tools
+-- Version: 1.0
+-- Database: Oracle Autonomous Database Serverless 23ai
+-- Date: January 2026
+--
+-- GitHub: https://github.com/YOUR_USERNAME/oracle-logminer-cdc
+-- Blog: https://github.com/vijaybalebail/oracle_ADB_logminer
+--
+-- =============================================================================
+-- PREREQUISITES
+-- =============================================================================
+--
+-- 1. Oracle Autonomous Database Serverless 23ai or higher
+-- 2. GGADMIN user (pre-configured in ADB-S with OGG_CAPTURE role)
+-- 3. ADMIN user for ORDS configuration
+-- 4. Supplemental logging enabled on source tables
+--
+-- =============================================================================
+-- INSTALLATION INSTRUCTIONS
+-- =============================================================================
+--
+-- STEP 1: As ADMIN user, enable supplemental logging on source tables
+--         See section: "ADMIN USER - SUPPLEMENTAL LOGGING SETUP"
+--
+-- STEP 2: As ADMIN user, unlock and configure GGADMIN user
+--         See section: "ADMIN USER - GGADMIN CONFIGURATION"
+--
+-- STEP 3: As GGADMIN user, create CDC infrastructure
+--         See section: "GGADMIN USER - CDC INFRASTRUCTURE"
+--
+-- STEP 4: As ADMIN user, enable ORDS for CDC objects
+--         See section: "ADMIN USER - ORDS CONFIGURATION"
+--
+-- STEP 5: Verify installation
+--         See section: "VERIFICATION"
+--
+-- =============================================================================
 
-SET ECHO ON
-SET SERVEROUTPUT ON SIZE 1000000
+-- =============================================================================
+-- SECTION 1: ADMIN USER - SUPPLEMENTAL LOGGING SETUP
+-- =============================================================================
+-- Run this section as ADMIN user
+-- Purpose: Enable supplemental logging to capture complete column values
+-- =============================================================================
 
--- Creating Production Self-Healing CDC Capture Procedure
+PROMPT
+PROMPT ========================================
+PROMPT SECTION 1: SUPPLEMENTAL LOGGING SETUP
+PROMPT ========================================
+PROMPT Run as: ADMIN
+PROMPT
 
+-- Enable database-level supplemental logging
+ALTER DATABASE ADD SUPPLEMENTAL LOG DATA;
+ALTER DATABASE ADD SUPPLEMENTAL LOG DATA (PRIMARY KEY) COLUMNS;
+
+PROMPT ✓ Database supplemental logging enabled
+
+-- Enable supplemental logging on your source table(s)
+-- Example for EMP_TEST table:
+ALTER TABLE emp_test ADD SUPPLEMENTAL LOG DATA (ALL) COLUMNS;
+
+PROMPT ✓ Table-level supplemental logging enabled for EMP_TEST
+
+-- Verify supplemental logging
+SELECT 
+    supplemental_log_data_min,
+    supplemental_log_data_pk,
+    supplemental_log_data_ui
+FROM v$database;
+
+PROMPT
+PROMPT ✓ Section 1 Complete
+PROMPT
+
+-- =============================================================================
+-- SECTION 2: ADMIN USER - GGADMIN CONFIGURATION
+-- =============================================================================
+-- Run this section as ADMIN user
+-- Purpose: Configure GGADMIN user with proper privileges
+-- =============================================================================
+
+PROMPT
+PROMPT ========================================
+PROMPT SECTION 2: GGADMIN CONFIGURATION
+PROMPT ========================================
+PROMPT Run as: ADMIN
+PROMPT
+
+-- Unlock GGADMIN user and set password
+-- IMPORTANT: Change 'YourSecurePassword123!' to a strong password
+ALTER USER GGADMIN IDENTIFIED BY "YourSecurePassword123!" ACCOUNT UNLOCK;
+
+PROMPT ✓ GGADMIN user unlocked
+
+-- Grant SELECT on source tables to GGADMIN
+-- Add grants for each table you want to monitor
+GRANT SELECT ON ADMIN.EMP_TEST TO GGADMIN;
+
+PROMPT ✓ Grants provided to GGADMIN
+
+-- Verify GGADMIN has necessary privileges
+SELECT 
+    grantee,
+    privilege
+FROM dba_sys_privs
+WHERE grantee = 'GGADMIN'
+  AND privilege IN ('LOGMINING', 'SELECT ANY TRANSACTION', 'SELECT ANY DICTIONARY')
+ORDER BY privilege;
+
+PROMPT
+PROMPT ✓ Section 2 Complete
+PROMPT
+
+-- =============================================================================
+-- SECTION 3: GGADMIN USER - CDC INFRASTRUCTURE
+-- =============================================================================
+-- Run this section as GGADMIN user
+-- Purpose: Create all CDC objects (table, indexes, procedure, jobs, views)
+-- =============================================================================
+
+PROMPT
+PROMPT ========================================
+PROMPT SECTION 3: CDC INFRASTRUCTURE
+PROMPT ========================================
+PROMPT Run as: GGADMIN
+PROMPT
+
+-- -----------------------------------------------------------------------------
+-- 3.1: Create CDC History Table
+-- -----------------------------------------------------------------------------
+PROMPT
+PROMPT Step 3.1: Creating CDC history table...
+
+-- Drop existing table if it exists
+BEGIN
+    EXECUTE IMMEDIATE 'DROP TABLE logminer_cdc_history PURGE';
+    DBMS_OUTPUT.PUT_LINE('✓ Existing table dropped');
+EXCEPTION 
+    WHEN OTHERS THEN 
+        IF SQLCODE != -942 THEN RAISE; END IF;
+END;
+/
+
+-- Create main CDC history table
+CREATE TABLE logminer_cdc_history (
+    capture_id       NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    capture_time     TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+    scn              NUMBER NOT NULL,
+    commit_scn       NUMBER,
+    commit_timestamp DATE,
+    timestamp        DATE NOT NULL,
+    operation        VARCHAR2(32) NOT NULL,
+    username         VARCHAR2(128),
+    seg_owner        VARCHAR2(128) NOT NULL,
+    table_name       VARCHAR2(128) NOT NULL,
+    sql_redo         CLOB,
+    sql_undo         CLOB,
+    xid              RAW(8),
+    row_id           VARCHAR2(20),
+    session_info     VARCHAR2(100),
+    CONSTRAINT chk_operation CHECK (operation IN ('INSERT', 'UPDATE', 'DELETE', 'DDL'))
+)
+LOB (sql_redo) STORE AS SECUREFILE (ENABLE STORAGE IN ROW CHUNK 8192 CACHE COMPRESS HIGH)
+LOB (sql_undo) STORE AS SECUREFILE (ENABLE STORAGE IN ROW CHUNK 8192 CACHE COMPRESS HIGH);
+
+PROMPT ✓ CDC history table created
+
+-- Add table comment
+COMMENT ON TABLE logminer_cdc_history IS 
+'Permanent storage for database changes captured via Oracle LogMiner. Contains complete audit trail with SQL_REDO and SQL_UNDO for all DML operations.';
+
+-- -----------------------------------------------------------------------------
+-- 3.2: Create Indexes
+-- -----------------------------------------------------------------------------
+PROMPT
+PROMPT Step 3.2: Creating indexes...
+
+CREATE INDEX idx_logminer_cdc_time ON logminer_cdc_history(capture_time);
+CREATE INDEX idx_logminer_cdc_scn ON logminer_cdc_history(scn);
+CREATE INDEX idx_logminer_cdc_table ON logminer_cdc_history(seg_owner, table_name, timestamp);
+CREATE INDEX idx_logminer_cdc_operation ON logminer_cdc_history(operation, capture_time);
+CREATE INDEX idx_logminer_cdc_user ON logminer_cdc_history(username, timestamp);
+CREATE INDEX idx_logminer_cdc_xid ON logminer_cdc_history(xid);
+
+PROMPT ✓ All indexes created
+
+-- -----------------------------------------------------------------------------
+-- 3.3: Create Capture Procedure
+-- -----------------------------------------------------------------------------
+PROMPT
+PROMPT Step 3.3: Creating capture procedure...
 CREATE OR REPLACE PROCEDURE ggadmin.capture_cdc_changes AS
     v_last_captured_scn NUMBER;
     v_current_scn NUMBER;
@@ -258,50 +426,94 @@ SHOW ERRORS
 -- Grant execute permission
 GRANT EXECUTE ON ggadmin.capture_cdc_changes TO PUBLIC;
 
--- ============================================================================
--- Production Self-Healing CDC Procedure Created Successfully!
--- ============================================================================
---
--- Key Features:
---   - Automatic ORA-01291 recovery
---   - Comprehensive system schema filtering
---   - Excludes: SYS, SYSTEM, GGADMIN, AUDSYS, APPQOSSYS, APEX%, FLOWS%
---   - Excludes system tables: DBTOOLS$%, OBJ#%, REDO$%, SMON$%
---   - Captures all user schema DML operations
---   - 10K row safety limit per run
---   - Logs all recovery actions
---
--- Filtered Schemas (EXCLUDED):
---   - Oracle system schemas: SYS, SYSTEM, AUDSYS, APPQOSSYS
---   - LogMiner CDC schema: GGADMIN
---   - Oracle APEX: APEX%, FLOWS%
---   - Unknown/invalid schemas: UNKNOWN
---
--- Filtered Tables (EXCLUDED):
---   - Database tools: DBTOOLS$%
---   - Oracle internal: OBJ#%, REDO$%, SMON$%
---
--- What Gets Captured:
---   - All user schemas (ADMIN, SCOTT, HR, etc.)
---   - INSERT, UPDATE, DELETE operations only
---   - Full SQL redo and undo statements
---   - Complete transaction context
---
--- To test:
---   SET SERVEROUTPUT ON
---   EXEC ggadmin.capture_cdc_changes;
---
--- To view what's being captured:
---   SELECT seg_owner, table_name, operation, COUNT(*)
---   FROM ggadmin.cdc_changes_history
---   WHERE seg_owner != 'SYSTEM'
---   GROUP BY seg_owner, table_name, operation
---   ORDER BY seg_owner, table_name;
---
--- To view recovery checkpoints:
---   SELECT * FROM ggadmin.cdc_changes_history
---   WHERE table_name = 'CHECKPOINT'
---   ORDER BY capture_id DESC;
+-- -----------------------------------------------------------------------------
+-- 3.4: Create Views
+-- -----------------------------------------------------------------------------
+PROMPT
+PROMPT Step 3.4: Creating views...
+
+-- Recent changes view (last 7 days)
+CREATE OR REPLACE VIEW v_recent_cdc_changes AS
+SELECT 
+    capture_id,
+    TO_CHAR(capture_time, 'YYYY-MM-DD HH24:MI:SS') as captured_at,
+    scn,
+    TO_CHAR(timestamp, 'YYYY-MM-DD HH24:MI:SS') as changed_at,
+    operation,
+    username,
+    seg_owner,
+    table_name,
+    seg_owner || '.' || table_name as full_table_name,
+    SUBSTR(sql_redo, 1, 4000) as sql_redo_preview,
+    CASE WHEN LENGTH(sql_redo) > 4000 THEN 'Y' ELSE 'N' END as has_more_redo,
+    xid,
+    row_id
+FROM logminer_cdc_history
+WHERE capture_time > SYSTIMESTAMP - INTERVAL '7' DAY
+ORDER BY capture_time DESC;
+
+COMMENT ON VIEW v_recent_cdc_changes IS 
+'Shows recent database changes from the last 7 days. SQL_REDO is truncated to 4000 characters for performance. ORDS-enabled for REST API access.';
+
+-- Changes by table view (last 30 days)
+CREATE OR REPLACE VIEW v_cdc_by_table AS
+SELECT 
+    seg_owner,
+    table_name,
+    seg_owner || '.' || table_name as full_table_name,
+    operation,
+    COUNT(*) as change_count,
+    MIN(timestamp) as first_change,
+    MAX(timestamp) as last_change,
+    COUNT(DISTINCT xid) as transaction_count,
+    COUNT(DISTINCT username) as user_count
+FROM logminer_cdc_history
+WHERE capture_time > SYSTIMESTAMP - INTERVAL '30' DAY
+GROUP BY seg_owner, table_name, operation
+ORDER BY change_count DESC;
+
+COMMENT ON VIEW v_cdc_by_table IS 
+'Aggregated statistics showing change counts by table and operation type. ORDS-enabled for REST API access.';
+
+-- Changes by user view (last 30 days)
+CREATE OR REPLACE VIEW v_cdc_by_user AS
+SELECT 
+    username,
+    operation,
+    COUNT(*) as change_count,
+    COUNT(DISTINCT seg_owner || '.' || table_name) as tables_affected,
+    MIN(timestamp) as first_change,
+    MAX(timestamp) as last_change
+FROM logminer_cdc_history
+WHERE capture_time > SYSTIMESTAMP - INTERVAL '30' DAY
+GROUP BY username, operation
+ORDER BY change_count DESC;
+
+COMMENT ON VIEW v_cdc_by_user IS 
+'Shows database change activity grouped by user and operation type.';
+
+PROMPT ✓ All views created
+
+-- -----------------------------------------------------------------------------
+-- 3.5: Create Scheduler Jobs
+-- -----------------------------------------------------------------------------
+PROMPT
+PROMPT Step 3.5: Creating scheduler jobs...
+
+-- Drop existing jobs if they exist
+BEGIN
+    DBMS_SCHEDULER.DROP_JOB('JOB_CAPTURE_CDC', TRUE);
+EXCEPTION WHEN OTHERS THEN NULL;
+END;
+/
+
+BEGIN
+    DBMS_SCHEDULER.DROP_JOB('JOB_PURGE_OLD_CDC', TRUE);
+EXCEPTION WHEN OTHERS THEN NULL;
+END;
+/
+
+-- Create CDC capture job (runs every 5 minutes)
 
 BEGIN
     DBMS_SCHEDULER.CREATE_JOB(
@@ -317,4 +529,347 @@ END;
 /
 
 
--- ============================================================================
+PROMPT ✓ CDC capture job created (runs every 5 minutes)
+
+-- Create purge job (runs monthly to clean old data)
+CREATE OR REPLACE PROCEDURE purge_old_cdc_data(
+    p_days_to_keep IN NUMBER DEFAULT 90
+) AS
+    v_rows_deleted NUMBER;
+BEGIN
+    DELETE FROM logminer_cdc_history
+    WHERE capture_time < SYSTIMESTAMP - INTERVAL '1' DAY * p_days_to_keep;
+    
+    v_rows_deleted := SQL%ROWCOUNT;
+    COMMIT;
+    
+    DBMS_OUTPUT.PUT_LINE('Purged ' || v_rows_deleted || ' old CDC records');
+END purge_old_cdc_data;
+/
+
+BEGIN
+    DBMS_SCHEDULER.CREATE_JOB (
+        job_name        => 'JOB_PURGE_OLD_CDC',
+        job_type        => 'PLSQL_BLOCK',
+        job_action      => 'BEGIN purge_old_cdc_data(p_days_to_keep => 90); END;',
+        start_date      => SYSTIMESTAMP + INTERVAL '1' DAY,
+        repeat_interval => 'FREQ=MONTHLY; BYMONTHDAY=1; BYHOUR=3',
+        enabled         => TRUE,
+        comments        => 'Purges CDC records older than 90 days, runs monthly at 3 AM'
+    );
+END;
+/
+
+PROMPT ✓ Purge job created (runs monthly)
+
+-- Verify jobs
+SELECT job_name, state, enabled, next_run_date
+FROM user_scheduler_jobs
+WHERE job_name IN ('JOB_CAPTURE_CDC', 'JOB_PURGE_OLD_CDC');
+
+PROMPT
+PROMPT ✓ Section 3 Complete
+PROMPT
+
+-- =============================================================================
+-- SECTION 4: ADMIN USER - ORDS CONFIGURATION
+-- =============================================================================
+-- Run this section as ADMIN user
+-- Purpose: Enable REST API access to CDC data via ORDS
+-- =============================================================================
+
+PROMPT
+PROMPT ========================================
+PROMPT SECTION 4: ORDS CONFIGURATION
+PROMPT ========================================
+PROMPT Run as: ADMIN
+PROMPT
+
+-- Enable GGADMIN schema for ORDS
+BEGIN
+    ORDS.ENABLE_SCHEMA(
+        p_enabled             => TRUE,
+        p_schema              => 'GGADMIN',
+        p_url_mapping_type    => 'BASE_PATH',
+        p_url_mapping_pattern => 'ggadmin',
+        p_auto_rest_auth      => FALSE
+    );
+END;
+/
+
+PROMPT ✓ GGADMIN schema enabled for ORDS
+
+-- Enable CDC history table
+BEGIN
+    ORDS.ENABLE_OBJECT(
+        p_enabled      => TRUE,
+        p_schema       => 'GGADMIN',
+        p_object       => 'LOGMINER_CDC_HISTORY',
+        p_object_type  => 'TABLE',
+        p_object_alias => 'cdc_history'
+    );
+END;
+/
+
+PROMPT ✓ CDC history table enabled
+
+-- Enable recent changes view
+BEGIN
+    ORDS.ENABLE_OBJECT(
+        p_enabled      => TRUE,
+        p_schema       => 'GGADMIN',
+        p_object       => 'V_RECENT_CDC_CHANGES',
+        p_object_type  => 'VIEW',
+        p_object_alias => 'recent_changes'
+    );
+END;
+/
+
+PROMPT ✓ Recent changes view enabled
+
+-- Enable changes by table view
+BEGIN
+    ORDS.ENABLE_OBJECT(
+        p_enabled      => TRUE,
+        p_schema       => 'GGADMIN',
+        p_object       => 'V_CDC_BY_TABLE',
+        p_object_type  => 'VIEW',
+        p_object_alias => 'changes_by_table'
+    );
+END;
+/
+
+PROMPT ✓ Changes by table view enabled
+
+-- Enable changes by user view
+BEGIN
+    ORDS.ENABLE_OBJECT(
+        p_enabled      => TRUE,
+        p_schema       => 'GGADMIN',
+        p_object       => 'V_CDC_BY_USER',
+        p_object_type  => 'VIEW',
+        p_object_alias => 'changes_by_user'
+    );
+END;
+/
+
+PROMPT ✓ Changes by user view enabled
+
+-- Display ORDS URLs
+PROMPT
+PROMPT ✓ Section 4 Complete
+PROMPT
+PROMPT Your ORDS REST API endpoints are ready:
+PROMPT   Base URL: https://[your-db-name].adb.[region].oraclecloudapps.com/ords/
+PROMPT   
+PROMPT   Endpoints:
+PROMPT   - /ggadmin/cdc_history/         (All CDC records)
+PROMPT   - /ggadmin/recent_changes/      (Last 7 days)
+PROMPT   - /ggadmin/changes_by_table/    (Aggregated stats)
+PROMPT   - /ggadmin/changes_by_user/     (User activity)
+PROMPT
+
+-- Optional: Enable ADMIN schema and EMP_TEST table for ORDS
+-- Uncomment if you want to enable data manipulation via REST API
+
+/*
+BEGIN
+    ORDS.ENABLE_SCHEMA(
+        p_enabled             => TRUE,
+        p_schema              => 'ADMIN',
+        p_url_mapping_type    => 'BASE_PATH',
+        p_url_mapping_pattern => 'admin',
+        p_auto_rest_auth      => FALSE
+    );
+END;
+/
+
+BEGIN
+    ORDS.ENABLE_OBJECT(
+        p_enabled      => TRUE,
+        p_schema       => 'ADMIN',
+        p_object       => 'EMP_TEST',
+        p_object_type  => 'TABLE',
+        p_object_alias => 'emp_test'
+    );
+END;
+/
+
+PROMPT ✓ ADMIN.EMP_TEST enabled for ORDS (CRUD operations available)
+*/
+
+-- =============================================================================
+-- SECTION 5: VERIFICATION
+-- =============================================================================
+
+PROMPT
+PROMPT ========================================
+PROMPT SECTION 5: VERIFICATION
+PROMPT ========================================
+PROMPT
+
+-- Verify CDC table exists
+SELECT 'CDC Table: ' || 
+    CASE WHEN COUNT(*) > 0 THEN '✓ EXISTS' ELSE '✗ MISSING' END as status
+FROM user_tables 
+WHERE table_name = 'LOGMINER_CDC_HISTORY';
+
+-- Verify indexes exist
+SELECT 'Indexes: ' || COUNT(*) || ' of 6' as status
+FROM user_indexes
+WHERE table_name = 'LOGMINER_CDC_HISTORY';
+
+-- Verify views exist
+SELECT 'Views: ' || COUNT(*) || ' of 3' as status
+FROM user_views
+WHERE view_name IN ('V_RECENT_CDC_CHANGES', 'V_CDC_BY_TABLE', 'V_CDC_BY_USER');
+
+-- Verify procedures exist
+SELECT 'Procedures: ' || COUNT(*) || ' of 2' as status
+FROM user_procedures
+WHERE object_name IN ('CAPTURE_LOGMINER_CHANGES', 'PURGE_OLD_CDC_DATA');
+
+-- Verify jobs exist and are enabled
+SELECT 
+    job_name,
+    'State: ' || state || ', Next run: ' || TO_CHAR(next_run_date, 'YYYY-MM-DD HH24:MI:SS') as status
+FROM user_scheduler_jobs
+WHERE job_name IN ('JOB_CAPTURE_CDC', 'JOB_PURGE_OLD_CDC')
+ORDER BY job_name;
+
+-- Test manual capture
+PROMPT
+PROMPT Testing manual CDC capture...
+
+BEGIN
+    capture_logminer_changes(p_minutes_back => 60);
+    DBMS_OUTPUT.PUT_LINE('✓ Manual capture completed successfully');
+END;
+/
+
+-- Check captured records
+SELECT 'Captured records: ' || COUNT(*) as status
+FROM logminer_cdc_history;
+
+PROMPT
+PROMPT ========================================
+PROMPT INSTALLATION COMPLETE!
+PROMPT ========================================
+PROMPT
+PROMPT Next Steps:
+PROMPT 1. Make changes to your monitored tables
+PROMPT 2. Wait 5 minutes for automatic capture
+PROMPT 3. Query CDC data:
+PROMPT    SELECT * FROM v_recent_cdc_changes;
+PROMPT
+PROMPT 4. Access via REST API:
+PROMPT    curl "https://[your-db].adb.[region].oraclecloudapps.com/ords/ggadmin/recent_changes/"
+PROMPT
+PROMPT 5. Deploy Streamlit dashboard for visualization
+PROMPT
+PROMPT ========================================
+
+-- =============================================================================
+-- USAGE EXAMPLES
+-- =============================================================================
+
+/*
+-- Manual capture for specific time range
+BEGIN
+    capture_logminer_changes(
+        p_minutes_back => 30  -- Capture last 30 minutes
+    );
+END;
+/
+
+-- Manual capture for specific SCN range
+DECLARE
+    v_start_scn NUMBER := 12345678;
+    v_end_scn   NUMBER := 12346000;
+BEGIN
+    capture_logminer_changes(
+        p_start_scn => v_start_scn,
+        p_end_scn   => v_end_scn
+    );
+END;
+/
+
+-- Query recent changes
+SELECT * FROM v_recent_cdc_changes
+WHERE table_name = 'EMP_TEST'
+  AND operation = 'UPDATE'
+ORDER BY captured_at DESC
+FETCH FIRST 10 ROWS ONLY;
+
+-- Get aggregated statistics
+SELECT * FROM v_cdc_by_table
+ORDER BY change_count DESC;
+
+-- Find changes by specific user
+SELECT * FROM v_cdc_by_user
+WHERE username = 'ADMIN'
+ORDER BY change_count DESC;
+
+-- Get SQL to undo recent deletes
+SELECT 
+    captured_at,
+    full_table_name,
+    sql_undo
+FROM v_recent_cdc_changes
+WHERE operation = 'DELETE'
+  AND captured_at > SYSTIMESTAMP - INTERVAL '1' HOUR
+ORDER BY captured_at DESC;
+
+-- Purge old data manually
+BEGIN
+    purge_old_cdc_data(p_days_to_keep => 30);
+END;
+/
+*/
+
+-- =============================================================================
+-- TROUBLESHOOTING
+-- =============================================================================
+
+/*
+-- Check job status
+SELECT job_name, state, failure_count, last_start_date, next_run_date
+FROM user_scheduler_jobs
+WHERE job_name LIKE '%CDC%';
+
+-- Check job run history
+SELECT log_date, status, error#, additional_info
+FROM user_scheduler_job_run_details
+WHERE job_name = 'JOB_CAPTURE_CDC'
+ORDER BY log_date DESC
+FETCH FIRST 10 ROWS ONLY;
+
+-- Check supplemental logging
+SELECT supplemental_log_data_min, supplemental_log_data_pk
+FROM v$database;
+
+-- Verify GGADMIN privileges
+SELECT privilege
+FROM user_sys_privs
+WHERE privilege LIKE '%LOG%'
+   OR privilege LIKE '%TRANSACTION%';
+
+-- Check current SCN
+SELECT current_scn FROM v$database;
+
+-- Test LogMiner access
+BEGIN
+    DBMS_LOGMNR.START_LOGMNR(
+        STARTSCN => 12345678,
+        ENDSCN   => 12345679,
+        OPTIONS  => DBMS_LOGMNR.DICT_FROM_ONLINE_CATALOG
+    );
+    DBMS_LOGMNR.END_LOGMNR;
+    DBMS_OUTPUT.PUT_LINE('✓ LogMiner access confirmed');
+END;
+/
+*/
+
+-- =============================================================================
+-- END OF INSTALLATION SCRIPT
+-- =============================================================================
